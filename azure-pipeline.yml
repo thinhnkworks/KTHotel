@@ -1,0 +1,58 @@
+trigger:
+- main  # Replace with the appropriate branch trigger
+
+pr: none
+
+pool:
+  vmImage: 'windows-latest'
+
+stages:
+- stage: Build
+  jobs:
+  - job: BuildJob
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+        version: '5'  # Replace with your desired .NET Core version
+
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    - script: dotnet build --configuration Release
+      displayName: 'Build API'
+
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: 'publish'
+        publishWebProjects: true
+        arguments: '--configuration Release --output $(build.artifactstagingdirectory)'
+        zipAfterPublish: true
+      displayName: 'Publish API'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathtoPublish: '$(build.artifactstagingdirectory)'
+        artifactName: 'drop'
+      displayName: 'Publish Artifact'
+
+- stage: Deploy
+  dependsOn: Build
+  jobs:
+  - deployment: DeployJob
+    environment: 'kt-development'  # Replace with your environment name
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureRmWebAppDeployment@4
+            inputs:
+              ConnectionType: 'AzureRM'
+              azureSubscription: 'Kilatus - Dev Subscription'  # Replace with your Azure subscription name
+              appType: 'webApp'
+              WebAppName: 'kt-hotel-api-development'  # Replace with your App Service name
+              packageForLinux: '$(Pipeline.Workspace)/drop/*.zip'
+              enableCustomDeployment: true
+              deploymentType: 'webDeploy'
+            displayName: 'Deploy to Azure App Service'
